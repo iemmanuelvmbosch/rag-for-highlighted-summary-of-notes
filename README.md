@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+requests
+python-dotenv
+pydantic
+pydantic-settings
+openai
+chromadb
+tiktoken
