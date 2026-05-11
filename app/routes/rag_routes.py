@@ -8,7 +8,6 @@ from app.schemas.rag_schema import (
     AskRequest,
     AskResponse,
     AskTextResponse,
-    HealthResponse,
     IngestResponse,
     SearchRequest,
     SearchResponse,
@@ -220,25 +219,6 @@ def search_documents(payload: SearchRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Error searching documents in Chroma: {str(error)}",
-        )
-
-
-@router.get("/health", response_model=HealthResponse)
-def health():
-    try:
-        service = RagService()
-        result = service.health()
-
-        return HealthResponse(
-            status=result["status"],
-            total_collections=result["total_collections"],
-            collections=result["collections"],
-        )
-
-    except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error during RAG health check: {str(error)}",
         )
 
 

@@ -105,12 +105,6 @@ class SearchResponse(BaseModel):
     results: list[SourceItem]
 
 
-class HealthResponse(BaseModel):
-    status: str
-    total_collections: int
-    collections: list[dict]
-
-
 class DebugConnectionResponse(BaseModel):
     meettrack: dict
     openai: dict

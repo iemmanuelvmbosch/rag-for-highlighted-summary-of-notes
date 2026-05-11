@@ -8,7 +8,6 @@ from app.database.chroma import (
     get_all_rag_collections,
     get_collection_name_for_key,
     get_rag_collection,
-    list_rag_collection_names,
 )
 from app.models.rag_models import RagDocument, RagSearchResult
 from app.rag.prompts import SYSTEM_PROMPT, build_user_prompt
@@ -598,24 +597,6 @@ Contenido:
             return int(value)
         except Exception:
             return 0
-
-    def health(self) -> dict:
-        collection_names = list_rag_collection_names()
-        collections_info = []
-
-        for collection in get_all_rag_collections():
-            collections_info.append(
-                {
-                    "name": collection.name,
-                    "count": collection.count(),
-                }
-            )
-
-        return {
-            "status": "ok",
-            "total_collections": len(collection_names),
-            "collections": collections_info,
-        }
 
     def reset(self) -> dict:
         deleted = delete_all_rag_collections()
