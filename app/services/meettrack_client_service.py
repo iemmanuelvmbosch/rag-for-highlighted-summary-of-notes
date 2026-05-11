@@ -42,22 +42,22 @@ class MeetTrackClientService:
 
         except requests.exceptions.SSLError as error:
             raise RuntimeError(
-                "MeetTrack SSL error. Revisa certificado corporativo o usa MEETTRACK_VERIFY_SSL=false temporalmente."
+                "MeetTrack SSL error. Check the corporate certificate or temporarily use MEETTRACK_VERIFY_SSL=false."
             ) from error
 
         except requests.exceptions.ConnectTimeout as error:
             raise RuntimeError(
-                "MeetTrack connection timeout. No se pudo conectar al endpoint."
+                "MeetTrack connection timeout. Could not connect to the endpoint."
             ) from error
 
         except requests.exceptions.ReadTimeout as error:
             raise RuntimeError(
-                "MeetTrack read timeout. El endpoint tardó demasiado en responder."
+                "MeetTrack read timeout. The endpoint took too long to respond."
             ) from error
 
         except requests.exceptions.ConnectionError as error:
             raise RuntimeError(
-                "MeetTrack connection error. Revisa VPN, red interna Bosch, proxy o URL."
+                "MeetTrack connection error. Check VPN, Bosch internal network, proxy, or URL."
             ) from error
 
         except requests.exceptions.HTTPError as error:
@@ -77,11 +77,12 @@ class MeetTrackClientService:
             }
 
         if not isinstance(data, dict):
-            raise ValueError("La respuesta del endpoint no es un JSON válido.")
+            raise ValueError("The endpoint response is not valid JSON.")
 
         if "data" not in data:
             raise ValueError(
-                "La respuesta del endpoint no contiene la propiedad 'data'.")
+                "The endpoint response does not contain the 'data' property."
+            )
 
         if "totalRecords" not in data:
             data["totalRecords"] = len(data.get("data", []))

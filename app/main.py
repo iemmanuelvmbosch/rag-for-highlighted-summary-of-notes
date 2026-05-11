@@ -7,8 +7,11 @@ from app.routes.rag_routes import router as rag_router
 
 app = FastAPI(
     title="RAG for Highlighted Summary of Notes",
-    description="RAG con OpenAI y Chroma para consultar reuniones, notas, actividades y highlights de MeetTrack.",
-    version="2.0.0",
+    description=(
+        "RAG with OpenAI and Chroma to query MeetTrack meetings, notes, "
+        "activities, and highlights."
+    ),
+    version="1.0",
 )
 
 app.add_middleware(

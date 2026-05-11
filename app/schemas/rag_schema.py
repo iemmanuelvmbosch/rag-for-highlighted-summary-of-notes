@@ -42,21 +42,21 @@ class AskRequest(BaseModel):
 
     date: str | None = Field(
         default=None,
-        description="Fecha opcional para forzar día. Ejemplo: 2026-02-17.",
+        description="Optional date to force a specific day. Example: 2026-02-17.",
     )
 
     year_month: str | None = Field(
         default=None,
-        description="Mes opcional para forzar colección. Ejemplo: 2026-02 o febrero de 2026.",
+        description="Optional month to force a collection. Example: 2026-02 or February 2026.",
     )
 
     mode: Literal["auto", "day", "month", "semantic"] = Field(
         default="auto",
         description=(
-            "auto = detecta día o mes desde la pregunta. "
-            "day = busca reuniones completas del día. "
-            "month = busca reuniones completas del mes. "
-            "semantic = búsqueda vectorial normal."
+            "auto = detects day or month from the question. "
+            "day = searches complete meetings for the day. "
+            "month = searches complete meetings for the month. "
+            "semantic = regular vector search."
         ),
     )
 
@@ -97,7 +97,7 @@ class SearchRequest(BaseModel):
 
     year_month: str | None = Field(
         default=None,
-        description="Opcional. Si se manda, busca solo en esa colección mensual. Ejemplo: 2026-03.",
+        description="Optional. If provided, searches only in that monthly collection. Example: 2026-03.",
     )
 
 

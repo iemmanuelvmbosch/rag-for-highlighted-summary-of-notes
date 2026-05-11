@@ -22,11 +22,13 @@ class DocumentBuilderService:
 
         if not isinstance(meetings, list):
             raise ValueError(
-                "La propiedad 'data' debe ser una lista de reuniones.")
+                "The 'data' property must be a list of meetings."
+            )
 
         for meeting in meetings:
             documents.extend(
-                DocumentBuilderService._build_documents_for_meeting(meeting))
+                DocumentBuilderService._build_documents_for_meeting(meeting)
+            )
 
         return documents
 
@@ -219,35 +221,36 @@ class DocumentBuilderService:
 
         notes_section = DocumentBuilderService._format_notes_section(notes)
         activities_section = DocumentBuilderService._format_activities_section(
-            activities)
+            activities
+        )
 
         return f"""
-Tipo de documento: Contexto completo de reunión
+Document type: Full meeting context
 
-Datos principales:
-- ID de reunión: {meeting_id}
-- GUID de reunión: {meeting_guid}
-- Título: {meeting_title}
-- Asunto: {meeting_subject}
-- Descripción: {meeting_description}
-- Estado: {meeting_status}
-- Ubicación: {meeting_location}
-- Serie: {series_name}
-- Organización: {org_name}
-- Inicio: {start_date}
-- Fin: {end_date}
-- Fecha normalizada de inicio: {meeting_start_date}
-- Fecha normalizada de fin: {meeting_end_date}
-- Mes-año de la reunión: {meeting_year_month}
+Main data:
+- Meeting ID: {meeting_id}
+- Meeting GUID: {meeting_guid}
+- Title: {meeting_title}
+- Subject: {meeting_subject}
+- Description: {meeting_description}
+- Status: {meeting_status}
+- Location: {meeting_location}
+- Series: {series_name}
+- Organization: {org_name}
+- Start: {start_date}
+- End: {end_date}
+- Normalized start date: {meeting_start_date}
+- Normalized end date: {meeting_end_date}
+- Meeting year-month: {meeting_year_month}
 
-Resumen estructural:
-- Total de notas: {len(notes)}
-- Total de actividades: {len(activities)}
-- Notas críticas: {len(critical_notes)}
-- Notas de acción: {len(action_notes)}
-- Actividades abiertas: {len(open_activities)}
-- Actividades cerradas: {len(closed_activities)}
-- Actividades con posible inconsistencia: {len(inconsistent_activities)}
+Structural summary:
+- Total notes: {len(notes)}
+- Total activities: {len(activities)}
+- Critical notes: {len(critical_notes)}
+- Action notes: {len(action_notes)}
+- Open activities: {len(open_activities)}
+- Closed activities: {len(closed_activities)}
+- Activities with possible inconsistency: {len(inconsistent_activities)}
 
 {highlights_section}
 
@@ -266,55 +269,56 @@ Resumen estructural:
         closed_activities: list[dict[str, Any]],
         inconsistent_activities: list[dict[str, Any]],
     ) -> str:
-        lines = ["Highlights candidatos para el resumen:"]
+        lines = ["Highlight candidates for the summary:"]
 
         if critical_notes:
-            lines.append("Notas críticas detectadas:")
+            lines.append("Critical notes detected:")
             for note in critical_notes:
                 lines.append(
-                    f"- Tópico: {clean_text(note.get('topicName')) or 'General'} | "
-                    f"Contenido: {clean_text(note.get('noteContent'))}"
+                    f"- Topic: {clean_text(note.get('topicName')) or 'General'} | "
+                    f"Content: {clean_text(note.get('noteContent'))}"
                 )
 
         if action_notes:
-            lines.append("Notas de acción detectadas:")
+            lines.append("Action notes detected:")
             for note in action_notes:
                 lines.append(
-                    f"- Tópico: {clean_text(note.get('topicName')) or 'General'} | "
-                    f"Contenido: {clean_text(note.get('noteContent'))}"
+                    f"- Topic: {clean_text(note.get('topicName')) or 'General'} | "
+                    f"Content: {clean_text(note.get('noteContent'))}"
                 )
 
         if open_activities:
-            lines.append("Actividades abiertas detectadas:")
+            lines.append("Open activities detected:")
             for activity in open_activities:
                 lines.append(
-                    f"- Responsable: {clean_text(activity.get('assignedTo'))} | "
-                    f"Tópico: {clean_text(activity.get('topicName')) or 'General'} | "
-                    f"Actividad: {clean_text(activity.get('activityDescription'))} | "
-                    f"Fecha objetivo: {clean_text(activity.get('targetDate'))}"
+                    f"- Owner: {clean_text(activity.get('assignedTo'))} | "
+                    f"Topic: {clean_text(activity.get('topicName')) or 'General'} | "
+                    f"Activity: {clean_text(activity.get('activityDescription'))} | "
+                    f"Target date: {clean_text(activity.get('targetDate'))}"
                 )
 
         if closed_activities:
-            lines.append("Actividades cerradas detectadas:")
+            lines.append("Closed activities detected:")
             for activity in closed_activities:
                 lines.append(
-                    f"- Responsable: {clean_text(activity.get('assignedTo'))} | "
-                    f"Tópico: {clean_text(activity.get('topicName')) or 'General'} | "
-                    f"Actividad: {clean_text(activity.get('activityDescription'))} | "
-                    f"Fecha de cierre: {clean_text(activity.get('completedAt'))}"
+                    f"- Owner: {clean_text(activity.get('assignedTo'))} | "
+                    f"Topic: {clean_text(activity.get('topicName')) or 'General'} | "
+                    f"Activity: {clean_text(activity.get('activityDescription'))} | "
+                    f"Closed date: {clean_text(activity.get('completedAt'))}"
                 )
 
         if inconsistent_activities:
-            lines.append("Inconsistencias detectadas:")
+            lines.append("Inconsistencies detected:")
             for activity in inconsistent_activities:
                 lines.append(
-                    f"- La actividad '{clean_text(activity.get('activityDescription'))}' "
-                    f"aparece como Open pero tiene completedAt: {clean_text(activity.get('completedAt'))}"
+                    f"- The activity '{clean_text(activity.get('activityDescription'))}' "
+                    f"appears as Open but has completedAt: {clean_text(activity.get('completedAt'))}"
                 )
 
         if len(lines) == 1:
             lines.append(
-                "No hay highlights críticos, acciones o inconsistencias claras.")
+                "There are no clear critical highlights, actions, or inconsistencies."
+            )
 
         return "\n".join(lines)
 
@@ -323,13 +327,14 @@ Resumen estructural:
         notes_by_topic: dict[str, list[dict[str, Any]]],
         activities_by_topic: dict[str, list[dict[str, Any]]],
     ) -> str:
-        topics = sorted(set(notes_by_topic.keys()) |
-                        set(activities_by_topic.keys()))
+        topics = sorted(
+            set(notes_by_topic.keys()) | set(activities_by_topic.keys())
+        )
 
         if not topics:
-            return "Tópicos detectados:\nNo se detectaron tópicos."
+            return "Detected topics:\nNo topics were detected."
 
-        lines = ["Tópicos detectados y contexto por tópico:"]
+        lines = ["Detected topics and context by topic:"]
 
         for topic in topics:
             notes_count = len(notes_by_topic.get(topic, []))
@@ -337,9 +342,9 @@ Resumen estructural:
 
             lines.append(
                 f"""
-Tópico: {topic}
-- Notas relacionadas: {notes_count}
-- Actividades relacionadas: {activities_count}
+Topic: {topic}
+- Related notes: {notes_count}
+- Related activities: {activities_count}
 """.strip()
             )
 
@@ -348,9 +353,9 @@ Tópico: {topic}
     @staticmethod
     def _format_notes_section(notes: list[dict[str, Any]]) -> str:
         if not notes:
-            return "Notas registradas:\nNo se registraron notas."
+            return "Registered notes:\nNo notes were registered."
 
-        lines = ["Notas registradas:"]
+        lines = ["Registered notes:"]
 
         for index, note in enumerate(notes, start=1):
             note_id = note.get("idNote")
@@ -362,13 +367,13 @@ Tópico: {topic}
 
             lines.append(
                 f"""
-Nota {index}:
-- ID de nota: {note_id}
-- Tipo: {note_type}
-- Tópico: {topic_name}
-- Creada en: {created_at}
-- Fecha normalizada: {note_created_date}
-- Contenido: {note_content}
+Note {index}:
+- Note ID: {note_id}
+- Type: {note_type}
+- Topic: {topic_name}
+- Created at: {created_at}
+- Normalized date: {note_created_date}
+- Content: {note_content}
 """.strip()
             )
 
@@ -377,16 +382,17 @@ Nota {index}:
     @staticmethod
     def _format_activities_section(activities: list[dict[str, Any]]) -> str:
         if not activities:
-            return "Actividades registradas:\nNo se registraron actividades."
+            return "Registered activities:\nNo activities were registered."
 
-        lines = ["Actividades registradas:"]
+        lines = ["Registered activities:"]
 
         for index, activity in enumerate(activities, start=1):
             activity_id = activity.get("idActivity")
             topic_name = clean_text(activity.get("topicName")) or "General"
             assigned_to = clean_text(activity.get("assignedTo"))
             activity_description = clean_text(
-                activity.get("activityDescription"))
+                activity.get("activityDescription")
+            )
             activity_status = clean_text(activity.get("activityStatus"))
             target_date = clean_text(activity.get("targetDate"))
             completed_at = clean_text(activity.get("completedAt"))
@@ -395,21 +401,21 @@ Nota {index}:
 
             inconsistency = ""
             if activity_status.lower() == "open" and completed_at:
-                inconsistency = "Sí, aparece como Open pero tiene fecha de cierre."
+                inconsistency = "Yes, it appears as Open but has a closed date."
 
             lines.append(
                 f"""
-Actividad {index}:
-- ID de actividad: {activity_id}
-- Tópico: {topic_name}
-- Responsable: {assigned_to}
-- Estado: {activity_status}
-- Fecha objetivo: {target_date}
-- Fecha objetivo normalizada: {activity_target_date}
-- Fecha de cierre: {completed_at}
-- Fecha de cierre normalizada: {activity_completed_date}
-- Posible inconsistencia: {inconsistency}
-- Descripción: {activity_description}
+Activity {index}:
+- Activity ID: {activity_id}
+- Topic: {topic_name}
+- Owner: {assigned_to}
+- Status: {activity_status}
+- Target date: {target_date}
+- Normalized target date: {activity_target_date}
+- Closed date: {completed_at}
+- Normalized closed date: {activity_completed_date}
+- Possible inconsistency: {inconsistency}
+- Description: {activity_description}
 """.strip()
             )
 
@@ -440,28 +446,28 @@ Actividad {index}:
         topic_id = note.get("idTopicFk")
 
         note_text = f"""
-Tipo de documento: Nota de reunión
+Document type: Meeting note
 
-Contexto de reunión:
-- ID de reunión: {meeting_id}
-- Título de reunión: {meeting_title}
-- Asunto de reunión: {meeting_subject}
-- Estado de reunión: {meeting_status}
-- Ubicación: {meeting_location}
-- Serie: {series_name}
-- Organización: {org_name}
-- Fecha de reunión: {meeting_start_date}
-- Mes-año de reunión: {meeting_year_month}
+Meeting context:
+- Meeting ID: {meeting_id}
+- Meeting title: {meeting_title}
+- Meeting subject: {meeting_subject}
+- Meeting status: {meeting_status}
+- Location: {meeting_location}
+- Series: {series_name}
+- Organization: {org_name}
+- Meeting date: {meeting_start_date}
+- Meeting year-month: {meeting_year_month}
 
-Detalle de nota:
-- ID de nota: {note_id}
-- Tipo de nota: {note_type}
-- Tópico: {topic_name}
-- ID de tópico: {topic_id}
-- Fecha de creación: {created_at}
-- Fecha normalizada de creación: {note_created_date}
+Note detail:
+- Note ID: {note_id}
+- Note type: {note_type}
+- Topic: {topic_name}
+- Topic ID: {topic_id}
+- Creation date: {created_at}
+- Normalized creation date: {note_created_date}
 
-Contenido:
+Content:
 {note_content}
 """.strip()
 
@@ -523,35 +529,35 @@ Contenido:
 
         inconsistency = ""
         if activity_status.lower() == "open" and completed_at:
-            inconsistency = "La actividad aparece como Open pero tiene completedAt."
+            inconsistency = "The activity appears as Open but has completedAt."
 
         activity_text = f"""
-Tipo de documento: Actividad de reunión
+Document type: Meeting activity
 
-Contexto de reunión:
-- ID de reunión: {meeting_id}
-- Título de reunión: {meeting_title}
-- Asunto de reunión: {meeting_subject}
-- Estado de reunión: {meeting_status}
-- Ubicación: {meeting_location}
-- Serie: {series_name}
-- Organización: {org_name}
-- Fecha de reunión: {meeting_start_date}
-- Mes-año de reunión: {meeting_year_month}
+Meeting context:
+- Meeting ID: {meeting_id}
+- Meeting title: {meeting_title}
+- Meeting subject: {meeting_subject}
+- Meeting status: {meeting_status}
+- Location: {meeting_location}
+- Series: {series_name}
+- Organization: {org_name}
+- Meeting date: {meeting_start_date}
+- Meeting year-month: {meeting_year_month}
 
-Detalle de actividad:
-- ID de actividad: {activity_id}
-- Tópico: {topic_name}
-- ID de tópico: {topic_id}
-- Responsable: {assigned_to}
-- Estado de actividad: {activity_status}
-- Fecha objetivo: {target_date}
-- Fecha objetivo normalizada: {activity_target_date}
-- Fecha de cierre: {completed_at}
-- Fecha de cierre normalizada: {activity_completed_date}
-- Posible inconsistencia: {inconsistency}
+Activity detail:
+- Activity ID: {activity_id}
+- Topic: {topic_name}
+- Topic ID: {topic_id}
+- Owner: {assigned_to}
+- Activity status: {activity_status}
+- Target date: {target_date}
+- Normalized target date: {activity_target_date}
+- Closed date: {completed_at}
+- Normalized closed date: {activity_completed_date}
+- Possible inconsistency: {inconsistency}
 
-Descripción:
+Description:
 {activity_description}
 """.strip()
 

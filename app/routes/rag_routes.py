@@ -28,29 +28,32 @@ router = APIRouter(
 def ingest_meettrack_data(
     reset: bool = Query(
         default=True,
-        description="Si es true, reinicia todo cuando no hay filtro. Si hay filtro, solo borra/reindexa documentos filtrados.",
+        description=(
+            "If true, resets everything when no filter is provided. "
+            "If a filter is provided, only filtered documents are deleted and reindexed."
+        ),
     ),
     date: str | None = Query(
         default=None,
-        description="Fecha exacta para indexar. Ejemplo: 2026-02-17.",
+        description="Exact date to index. Example: 2026-02-17.",
     ),
     start_date: str | None = Query(
         default=None,
-        description="Inicio del rango. Ejemplo: 2026-02-01.",
+        description="Start of the date range. Example: 2026-02-01.",
     ),
     end_date: str | None = Query(
         default=None,
-        description="Fin del rango. Ejemplo: 2026-02-29.",
+        description="End of the date range. Example: 2026-02-29.",
     ),
     year_month: str | None = Query(
         default=None,
-        description="Mes completo. Ejemplo: 2026-02 o febrero de 2026.",
+        description="Full month. Example: 2026-02 or February 2026.",
     ),
     date_scope: Literal["meeting", "related"] = Query(
         default="meeting",
         description=(
-            "meeting = filtra por fecha de la reunión. "
-            "related = filtra por fecha de reunión, notas creadas, targetDate o completedAt."
+            "meeting = filters by meeting date. "
+            "related = filters by meeting date, created notes, targetDate, or completedAt."
         ),
     ),
 ):
@@ -76,13 +79,13 @@ def ingest_meettrack_data(
             filter_start_date=result["filter_start_date"],
             filter_end_date=result["filter_end_date"],
             date_scope=result["date_scope"],
-            message="Ingest completado en Chroma usando colecciones por mes-año.",
+            message="Ingest completed in Chroma using month-year collections.",
         )
 
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Error al indexar datos: {str(error)}",
+            detail=f"Error indexing data: {str(error)}",
         )
 
 
@@ -90,25 +93,25 @@ def ingest_meettrack_data(
 def sync_meettrack_data(
     date: str | None = Query(
         default=None,
-        description="Fecha exacta para sincronizar. Ejemplo: 2026-02-17.",
+        description="Exact date to sync. Example: 2026-02-17.",
     ),
     start_date: str | None = Query(
         default=None,
-        description="Inicio del rango. Ejemplo: 2026-02-01.",
+        description="Start of the date range. Example: 2026-02-01.",
     ),
     end_date: str | None = Query(
         default=None,
-        description="Fin del rango. Ejemplo: 2026-02-29.",
+        description="End of the date range. Example: 2026-02-29.",
     ),
     year_month: str | None = Query(
         default=None,
-        description="Mes completo. Ejemplo: 2026-02 o febrero de 2026.",
+        description="Full month. Example: 2026-02 or February 2026.",
     ),
     date_scope: Literal["meeting", "related"] = Query(
         default="meeting",
         description=(
-            "meeting = filtra por fecha de la reunión. "
-            "related = filtra por fecha de reunión, notas creadas, targetDate o completedAt."
+            "meeting = filters by meeting date. "
+            "related = filters by meeting date, created notes, targetDate, or completedAt."
         ),
     ),
 ):
@@ -136,13 +139,15 @@ def sync_meettrack_data(
             filter_start_date=result["filter_start_date"],
             filter_end_date=result["filter_end_date"],
             date_scope=result["date_scope"],
-            message="Sync completado. Solo se procesaron documentos nuevos o modificados dentro del filtro indicado.",
+            message=(
+                "Sync completed. Only new or modified documents within the specified filter were processed."
+            ),
         )
 
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Error al sincronizar datos: {str(error)}",
+            detail=f"Error syncing data: {str(error)}",
         )
 
 
@@ -169,7 +174,7 @@ def ask_question(payload: AskRequest):
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Error al consultar el RAG: {str(error)}",
+            detail=f"Error querying the RAG: {str(error)}",
         )
 
 
@@ -193,7 +198,7 @@ def ask_question_text(payload: AskRequest):
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Error al consultar el RAG: {str(error)}",
+            detail=f"Error querying the RAG: {str(error)}",
         )
 
 
@@ -214,7 +219,7 @@ def search_documents(payload: SearchRequest):
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Error al buscar documentos en Chroma: {str(error)}",
+            detail=f"Error searching documents in Chroma: {str(error)}",
         )
 
 
@@ -233,7 +238,7 @@ def health():
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Error en health check del RAG: {str(error)}",
+            detail=f"Error during RAG health check: {str(error)}",
         )
 
 
@@ -257,5 +262,5 @@ def reset_collection():
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Error al reiniciar Chroma: {str(error)}",
+            detail=f"Error resetting Chroma: {str(error)}",
         )

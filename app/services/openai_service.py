@@ -35,9 +35,6 @@ class OpenAIService:
         self._configure_chat_client()
         self._configure_embedding_client()
 
-    # -------------------------------------------------------------------------
-    # Client configuration
-    # -------------------------------------------------------------------------
     def _build_http_client(self) -> httpx.Client:
         timeout = httpx.Timeout(
             connect=30.0,
@@ -81,7 +78,7 @@ class OpenAIService:
             )
             return
 
-        raise ValueError("LLM_PROVIDER inválido. Usa 'farm' u 'openai'.")
+        raise ValueError("Invalid LLM_PROVIDER. Use 'farm' or 'openai'.")
 
     def _configure_embedding_client(self) -> None:
         if self.embedding_provider == "local":
@@ -92,7 +89,8 @@ class OpenAIService:
         if self.embedding_provider == "farm":
             self.embedding_model = self._get_farm_embedding_deployment()
             self.embedding_client = self._build_farm_client(
-                self.embedding_model)
+                self.embedding_model
+            )
             return
 
         if self.embedding_provider == "openai":
@@ -107,7 +105,7 @@ class OpenAIService:
             return
 
         raise ValueError(
-            "EMBEDDING_PROVIDER inválido. Usa 'local', 'farm' u 'openai'."
+            "Invalid EMBEDDING_PROVIDER. Use 'local', 'farm', or 'openai'."
         )
 
     def _build_farm_client(self, deployment: str) -> OpenAI:
@@ -138,15 +136,12 @@ class OpenAIService:
             from sentence_transformers import SentenceTransformer
         except ImportError as error:
             raise RuntimeError(
-                "Falta instalar sentence-transformers. Ejecuta: "
+                "sentence-transformers is not installed. Run: "
                 "pip install sentence-transformers torch"
             ) from error
 
         return SentenceTransformer(self.settings.local_embedding_model)
 
-    # -------------------------------------------------------------------------
-    # Validators
-    # -------------------------------------------------------------------------
     def _validate_farm_settings(self) -> None:
         missing_values: list[str] = []
 
@@ -161,14 +156,14 @@ class OpenAIService:
 
         if missing_values:
             raise ValueError(
-                "Faltan variables de entorno para FARM/Open Enterprise: "
+                "Missing environment variables for FARM/Open Enterprise: "
                 + ", ".join(missing_values)
             )
 
     def _validate_openai_api_key(self) -> None:
         if not self.settings.openai_api_key:
             raise ValueError(
-                "OPENAI_API_KEY es requerido cuando usas OpenAI público."
+                "OPENAI_API_KEY is required when using public OpenAI."
             )
 
     def _get_farm_chat_deployment(self) -> str:
@@ -180,7 +175,7 @@ class OpenAIService:
 
         if not deployment:
             raise ValueError(
-                "Falta FARM_DEPLOYMENT o FARM_CHAT_DEPLOYMENT."
+                "FARM_DEPLOYMENT or FARM_CHAT_DEPLOYMENT is missing."
             )
 
         return deployment
@@ -190,15 +185,12 @@ class OpenAIService:
 
         if not deployment:
             raise ValueError(
-                "Falta FARM_EMBEDDING_DEPLOYMENT porque EMBEDDING_PROVIDER=farm. "
-                "Como no tienes ese deployment, usa EMBEDDING_PROVIDER=local."
+                "FARM_EMBEDDING_DEPLOYMENT is missing because EMBEDDING_PROVIDER=farm. "
+                "Since you do not have that deployment, use EMBEDDING_PROVIDER=local."
             )
 
         return deployment
 
-    # -------------------------------------------------------------------------
-    # Embeddings
-    # -------------------------------------------------------------------------
     def embed_texts(
         self,
         texts: list[str],
@@ -222,7 +214,7 @@ class OpenAIService:
         clean_query = query.replace("\n", " ").strip()
 
         if not clean_query:
-            raise ValueError("La query para embeddings no puede estar vacía.")
+            raise ValueError("The embedding query cannot be empty.")
 
         if self.embedding_provider == "local":
             embeddings = self._embed_texts_local([clean_query], batch_size=1)
@@ -238,7 +230,8 @@ class OpenAIService:
     ) -> list[list[float]]:
         if self.local_embedding_model is None:
             raise RuntimeError(
-                "El modelo local de embeddings no está cargado.")
+                "The local embedding model is not loaded."
+            )
 
         effective_batch_size = (
             batch_size
@@ -258,7 +251,7 @@ class OpenAIService:
 
         except Exception as error:
             raise RuntimeError(
-                f"Error generando embeddings locales con "
+                f"Error generating local embeddings with "
                 f"{self.settings.local_embedding_model}: {str(error)}"
             ) from error
 
@@ -269,7 +262,8 @@ class OpenAIService:
     ) -> list[list[float]]:
         if self.embedding_client is None:
             raise RuntimeError(
-                "El cliente remoto de embeddings no está configurado.")
+                "The remote embedding client is not configured."
+            )
 
         effective_batch_size = batch_size or 32
 
@@ -293,7 +287,7 @@ class OpenAIService:
 
         except APITimeoutError as error:
             raise RuntimeError(
-                "Timeout al generar embeddings. Revisa red, proxy, VPN o timeout."
+                "Timeout while generating embeddings. Check network, proxy, VPN, or timeout settings."
             ) from error
 
         except AuthenticationError as error:
@@ -301,22 +295,19 @@ class OpenAIService:
 
         except RateLimitError as error:
             raise RuntimeError(
-                "Rate limit al generar embeddings."
+                "Rate limit reached while generating embeddings."
             ) from error
 
         except APIStatusError as error:
             raise RuntimeError(self._format_status_error(error)) from error
 
-    # -------------------------------------------------------------------------
-    # Chat
-    # -------------------------------------------------------------------------
     def chat(
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.2,
     ) -> str:
         if self.chat_client is None:
-            raise RuntimeError("El cliente de chat no está configurado.")
+            raise RuntimeError("The chat client is not configured.")
 
         try:
             response = self.chat_client.chat.completions.create(
@@ -328,7 +319,7 @@ class OpenAIService:
             content = response.choices[0].message.content
 
             if not content:
-                return "No pude generar una respuesta con la información disponible."
+                return "I could not generate a response with the available information."
 
             return content
 
@@ -337,7 +328,7 @@ class OpenAIService:
 
         except APITimeoutError as error:
             raise RuntimeError(
-                "Timeout al generar respuesta."
+                "Timeout while generating the response."
             ) from error
 
         except AuthenticationError as error:
@@ -345,15 +336,12 @@ class OpenAIService:
 
         except RateLimitError as error:
             raise RuntimeError(
-                "Rate limit al generar respuesta."
+                "Rate limit reached while generating the response."
             ) from error
 
         except APIStatusError as error:
             raise RuntimeError(self._format_status_error(error)) from error
 
-    # -------------------------------------------------------------------------
-    # Debug
-    # -------------------------------------------------------------------------
     def test_connection(self) -> dict:
         result: dict[str, Any] = {
             "status": "unknown",
@@ -413,7 +401,7 @@ class OpenAIService:
                     },
                     {
                         "role": "user",
-                        "content": "Responde solamente: ok",
+                        "content": "Reply only: ok",
                     },
                 ],
                 temperature=0,
@@ -439,24 +427,21 @@ class OpenAIService:
                 "cause": repr(cause) if cause else None,
             }
 
-    # -------------------------------------------------------------------------
-    # Error formatting
-    # -------------------------------------------------------------------------
     def _format_connection_error(self, error: APIConnectionError) -> str:
         cause = getattr(error, "__cause__", None)
 
         if self.llm_provider == "farm" or self.embedding_provider == "farm":
             return (
                 "FARM/Open Enterprise connection error. "
-                "Revisa VPN, red interna Bosch, proxy corporativo, firewall, "
-                "certificado SSL o FARM_BASE_URL. "
+                "Check VPN, Bosch internal network, corporate proxy, firewall, "
+                "SSL certificate, or FARM_BASE_URL. "
                 f"Cause type: {type(cause).__name__ if cause else None}. "
                 f"Cause: {repr(cause) if cause else None}"
             )
 
         return (
             "OpenAI connection error. "
-            "Revisa proxy corporativo, certificado SSL, firewall o salida a api.openai.com. "
+            "Check corporate proxy, SSL certificate, firewall, or outbound access to api.openai.com. "
             f"Cause type: {type(cause).__name__ if cause else None}. "
             f"Cause: {repr(cause) if cause else None}"
         )
@@ -465,12 +450,12 @@ class OpenAIService:
         if self.llm_provider == "farm" or self.embedding_provider == "farm":
             return (
                 "FARM/Open Enterprise authentication error. "
-                "Revisa FARM_SUBSCRIPTION_KEY, el header "
+                "Check FARM_SUBSCRIPTION_KEY, the header "
                 f"'{self.settings.farm_subscription_header_name}', "
-                "el deployment y permisos del recurso."
+                "the deployment, and resource permissions."
             )
 
-        return "OpenAI authentication error. Revisa OPENAI_API_KEY."
+        return "OpenAI authentication error. Check OPENAI_API_KEY."
 
     def _format_status_error(self, error: APIStatusError) -> str:
         if self.llm_provider == "farm" or self.embedding_provider == "farm":
