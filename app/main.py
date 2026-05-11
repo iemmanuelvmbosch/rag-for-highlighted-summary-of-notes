@@ -23,12 +23,3 @@ app.add_middleware(
 )
 
 app.include_router(rag_router)
-
-
-@app.get("/")
-def root():
-    return {
-        "message": "RAG API running",
-        "docs": "/docs",
-        "rag_health": "/api/rag/health",
-    }
