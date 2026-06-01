@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     chroma_path: str = "./chroma_db"
     chroma_collection_name: str = "meettrack_rag"
 
+    db_server: Optional[str] = None
+    db_name: Optional[str] = None
+    db_user: Optional[str] = None
+    db_password: Optional[str] = None
+    db_odbc_driver: str = "ODBC Driver 17 for SQL Server"
+    db_encrypt: str = "yes"
+    db_trust_server_certificate: str = "yes"
+    db_connection_timeout: int = 30
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

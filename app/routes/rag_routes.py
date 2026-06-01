@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.database.sql_server import test_sql_server_connection
 from app.schemas.rag_schema import (
     AskRequest,
     AskResponse,
@@ -13,14 +15,38 @@ from app.schemas.rag_schema import (
     SearchResponse,
     SyncResponse,
 )
+from app.services.chat_history_service import ChatHistoryService
 from app.services.meettrack_client_service import MeetTrackClientService
 from app.services.openai_service import OpenAIService
 from app.services.rag_service import RagService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/rag",
     tags=["rag"],
 )
+
+
+def _save_chat_history_safe(
+    username_fk: str,
+    question: str,
+    response_content: str,
+    response_format: str = "markdown",
+    response_status: str = "success",
+) -> int | None:
+    try:
+        return ChatHistoryService.create_history(
+            username_fk=username_fk,
+            question=question,
+            response_content=response_content,
+            response_format=response_format,
+            response_status=response_status,
+        )
+
+    except Exception as error:
+        logger.exception("Error saving chatbot history: %s", str(error))
+        return None
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -162,15 +188,32 @@ def ask_question(payload: AskRequest):
             mode=payload.mode,
         )
 
+        id_history = _save_chat_history_safe(
+            username_fk=payload.username_fk,
+            question=payload.question,
+            response_content=result["answer"],
+            response_format="markdown",
+            response_status="success",
+        )
+
         return AskResponse(
             answer=result["answer"],
             temporal_period=result["temporal_period"],
             temporal_date=result["temporal_date"],
             temporal_year_month=result["temporal_year_month"],
             sources=result["sources"],
+            id_history=id_history,
         )
 
     except Exception as error:
+        _save_chat_history_safe(
+            username_fk=payload.username_fk,
+            question=payload.question,
+            response_content=str(error),
+            response_format="markdown",
+            response_status="error",
+        )
+
         raise HTTPException(
             status_code=500,
             detail=f"Error querying the RAG: {str(error)}",
@@ -189,12 +232,29 @@ def ask_question_text(payload: AskRequest):
             mode=payload.mode,
         )
 
+        id_history = _save_chat_history_safe(
+            username_fk=payload.username_fk,
+            question=payload.question,
+            response_content=result["answer"],
+            response_format="markdown",
+            response_status="success",
+        )
+
         return AskTextResponse(
             content=result["answer"],
             format="markdown",
+            id_history=id_history,
         )
 
     except Exception as error:
+        _save_chat_history_safe(
+            username_fk=payload.username_fk,
+            question=payload.question,
+            response_content=str(error),
+            response_format="markdown",
+            response_status="error",
+        )
+
         raise HTTPException(
             status_code=500,
             detail=f"Error querying the RAG: {str(error)}",
@@ -226,10 +286,12 @@ def search_documents(payload: SearchRequest):
 def debug_connections():
     meettrack_result = MeetTrackClientService.test_connection()
     openai_result = OpenAIService().test_connection()
+    sql_server_result = test_sql_server_connection()
 
     return {
         "meettrack": meettrack_result,
         "openai": openai_result,
+        "sql_server": sql_server_result,
     }
 
 

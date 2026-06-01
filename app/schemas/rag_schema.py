@@ -37,6 +37,12 @@ class SyncResponse(BaseModel):
 
 
 class AskRequest(BaseModel):
+    username_fk: str = Field(
+        ...,
+        min_length=1,
+        description="Username used to save the question history.",
+    )
+
     question: str = Field(..., min_length=2)
     top_k: int = Field(default=10, ge=1, le=100)
 
@@ -64,6 +70,7 @@ class AskRequest(BaseModel):
 class AskTextResponse(BaseModel):
     content: str
     format: str = "markdown"
+    id_history: int | None = None
 
 
 class SourceItem(BaseModel):
@@ -89,6 +96,7 @@ class AskResponse(BaseModel):
     temporal_date: str | None = None
     temporal_year_month: str | None = None
     sources: list[SourceItem]
+    id_history: int | None = None
 
 
 class SearchRequest(BaseModel):
@@ -108,3 +116,4 @@ class SearchResponse(BaseModel):
 class DebugConnectionResponse(BaseModel):
     meettrack: dict
     openai: dict
+    sql_server: dict
