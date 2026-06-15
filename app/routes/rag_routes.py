@@ -19,6 +19,7 @@ from app.services.chat_history_service import ChatHistoryService
 from app.services.meettrack_client_service import MeetTrackClientService
 from app.services.openai_service import OpenAIService
 from app.services.rag_service import RagService
+from app.utils.question_guard import classify_question
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,93 @@ def _save_chat_history_safe(
     except Exception as error:
         logger.exception("Error saving chatbot history: %s", str(error))
         return None
+
+
+def _clip_text(value: str, max_chars: int = 4000) -> str:
+    text = value or ""
+
+    if len(text) <= max_chars:
+        return text
+
+    return text[-max_chars:]
+
+
+def _build_conversation_context(payload: AskRequest) -> str:
+    pre_guard = classify_question(
+        question=payload.question,
+        has_conversation_context=bool(payload.context_history_id),
+        has_explicit_date_filter=bool(payload.date),
+        has_explicit_year_month_filter=bool(payload.year_month),
+        mode=payload.mode,
+    )
+
+    if not pre_guard.use_conversation_context:
+        return ""
+
+    blocks: list[str] = []
+
+    try:
+        selected_history_id = payload.context_history_id
+
+        if selected_history_id:
+            selected = ChatHistoryService.get_history_by_id(
+                username_fk=payload.username_fk,
+                id_history=selected_history_id,
+            )
+
+            if selected:
+                blocks.append(
+                    f"""
+Mensaje seleccionado como contexto:
+Pregunta anterior:
+{_clip_text(selected["question"], 2000)}
+
+Respuesta anterior:
+{_clip_text(selected["response_content"], 6000)}
+""".strip()
+                )
+
+        if payload.include_recent_history and payload.history_limit > 0:
+            recent_items = ChatHistoryService.get_recent_history(
+                username_fk=payload.username_fk,
+                limit=payload.history_limit,
+            )
+
+            if recent_items:
+                lines = ["Historial reciente de conversación:"]
+
+                for item in recent_items:
+                    if (
+                        selected_history_id
+                        and item.get("id_history") == selected_history_id
+                    ):
+                        continue
+
+                    if item.get("response_status") == "error":
+                        continue
+
+                    lines.append(
+                        f"""
+Pregunta:
+{_clip_text(item["question"], 1000)}
+
+Respuesta:
+{_clip_text(item["response_content"], 3000)}
+""".strip()
+                    )
+
+                if len(lines) > 1:
+                    blocks.append("\n\n---\n\n".join(lines))
+
+    except Exception as error:
+        logger.exception(
+            "Error building conversation context: %s",
+            str(error),
+        )
+
+    context = "\n\n==========\n\n".join(blocks)
+
+    return context[-10000:]
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -165,7 +253,7 @@ def sync_meettrack_data(
             filter_end_date=result["filter_end_date"],
             date_scope=result["date_scope"],
             message=(
-                "Sync completed. Only new or modified documents within the specified filter were processed."
+                "Sync completed. Existing documents for the affected meetings were refreshed."
             ),
         )
 
@@ -179,6 +267,8 @@ def sync_meettrack_data(
 @router.post("/ask", response_model=AskResponse)
 def ask_question(payload: AskRequest):
     try:
+        conversation_context = _build_conversation_context(payload)
+
         service = RagService()
         result = service.ask(
             question=payload.question,
@@ -186,6 +276,7 @@ def ask_question(payload: AskRequest):
             date_filter=payload.date,
             year_month_filter=payload.year_month,
             mode=payload.mode,
+            conversation_context=conversation_context,
         )
 
         id_history = _save_chat_history_safe(
@@ -223,6 +314,8 @@ def ask_question(payload: AskRequest):
 @router.post("/ask-text", response_model=AskTextResponse)
 def ask_question_text(payload: AskRequest):
     try:
+        conversation_context = _build_conversation_context(payload)
+
         service = RagService()
         result = service.ask(
             question=payload.question,
@@ -230,6 +323,7 @@ def ask_question_text(payload: AskRequest):
             date_filter=payload.date,
             year_month_filter=payload.year_month,
             mode=payload.mode,
+            conversation_context=conversation_context,
         )
 
         id_history = _save_chat_history_safe(
@@ -258,27 +352,6 @@ def ask_question_text(payload: AskRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Error querying the RAG: {str(error)}",
-        )
-
-
-@router.post("/search", response_model=SearchResponse)
-def search_documents(payload: SearchRequest):
-    try:
-        service = RagService()
-        results = service.search(
-            query=payload.query,
-            top_k=payload.top_k,
-            year_month=payload.year_month,
-        )
-
-        return SearchResponse(
-            results=[service._to_source_item(result) for result in results]
-        )
-
-    except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error searching documents in Chroma: {str(error)}",
         )
 
 

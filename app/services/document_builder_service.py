@@ -10,6 +10,7 @@ from app.utils.text_utils import (
     clean_text,
     collection_key_from_date,
     normalize_date,
+    normalize_label,
     year_month_from_date,
 )
 
@@ -31,6 +32,40 @@ class DocumentBuilderService:
             )
 
         return documents
+
+    @staticmethod
+    def _collect_related_dates(
+        start_date: str,
+        end_date: str,
+        notes: list[dict[str, Any]],
+        activities: list[dict[str, Any]],
+    ) -> tuple[list[str], list[str]]:
+        date_values: list[Any] = [start_date, end_date]
+
+        for note in notes:
+            date_values.append(note.get("createdAt"))
+
+        for activity in activities:
+            date_values.append(activity.get("targetDate"))
+            date_values.append(activity.get("completedAt"))
+
+        normalized_dates = sorted(
+            {
+                normalize_date(value)
+                for value in date_values
+                if normalize_date(value)
+            }
+        )
+
+        related_year_months = sorted(
+            {
+                normalized_date[:7]
+                for normalized_date in normalized_dates
+                if normalized_date
+            }
+        )
+
+        return normalized_dates, related_year_months
 
     @staticmethod
     def _build_documents_for_meeting(meeting: dict[str, Any]) -> list[RagDocument]:
@@ -55,6 +90,15 @@ class DocumentBuilderService:
 
         notes = meeting.get("notes") or []
         activities = meeting.get("activities") or []
+
+        related_dates, related_year_months = (
+            DocumentBuilderService._collect_related_dates(
+                start_date=start_date,
+                end_date=end_date,
+                notes=notes,
+                activities=activities,
+            )
+        )
 
         notes_by_topic: dict[str, list[dict[str, Any]]] = defaultdict(list)
         activities_by_topic: dict[str,
@@ -83,6 +127,8 @@ class DocumentBuilderService:
             meeting_start_date=meeting_start_date,
             meeting_end_date=meeting_end_date,
             meeting_year_month=meeting_year_month,
+            related_dates=related_dates,
+            related_year_months=related_year_months,
             notes=notes,
             activities=activities,
             notes_by_topic=notes_by_topic,
@@ -110,6 +156,8 @@ class DocumentBuilderService:
                         "meeting_start_date": meeting_start_date,
                         "meeting_end_date": meeting_end_date,
                         "meeting_year_month": meeting_year_month,
+                        "related_dates": "|".join(related_dates),
+                        "related_year_months": "|".join(related_year_months),
                         "notes_count": len(notes),
                         "activities_count": len(activities),
                         "content_hash": calculate_text_hash(full_context_text),
@@ -174,35 +222,41 @@ class DocumentBuilderService:
         meeting_start_date: str,
         meeting_end_date: str,
         meeting_year_month: str,
+        related_dates: list[str],
+        related_year_months: list[str],
         notes: list[dict[str, Any]],
         activities: list[dict[str, Any]],
         notes_by_topic: dict[str, list[dict[str, Any]]],
         activities_by_topic: dict[str, list[dict[str, Any]]],
     ) -> str:
         critical_notes = [
-            note for note in notes if clean_text(note.get("noteType")).lower() == "critica"
+            note
+            for note in notes
+            if normalize_label(note.get("noteType")) == "critica"
         ]
 
         action_notes = [
-            note for note in notes if clean_text(note.get("noteType")).lower() == "accion"
+            note
+            for note in notes
+            if normalize_label(note.get("noteType")) == "accion"
         ]
 
         open_activities = [
             activity
             for activity in activities
-            if clean_text(activity.get("activityStatus")).lower() == "open"
+            if normalize_label(activity.get("activityStatus")) == "open"
         ]
 
         closed_activities = [
             activity
             for activity in activities
-            if clean_text(activity.get("activityStatus")).lower() == "closed"
+            if normalize_label(activity.get("activityStatus")) == "closed"
         ]
 
         inconsistent_activities = [
             activity
             for activity in activities
-            if clean_text(activity.get("activityStatus")).lower() == "open"
+            if normalize_label(activity.get("activityStatus")) == "open"
             and clean_text(activity.get("completedAt"))
         ]
 
@@ -242,6 +296,8 @@ Main data:
 - Normalized start date: {meeting_start_date}
 - Normalized end date: {meeting_end_date}
 - Meeting year-month: {meeting_year_month}
+- Related normalized dates: {", ".join(related_dates) if related_dates else ""}
+- Related year-months: {", ".join(related_year_months) if related_year_months else ""}
 
 Structural summary:
 - Total notes: {len(notes)}
@@ -400,7 +456,7 @@ Note {index}:
             activity_completed_date = normalize_date(completed_at)
 
             inconsistency = ""
-            if activity_status.lower() == "open" and completed_at:
+            if normalize_label(activity_status) == "open" and completed_at:
                 inconsistency = "Yes, it appears as Open but has a closed date."
 
             lines.append(
@@ -443,7 +499,16 @@ Activity {index}:
         topic_name = clean_text(note.get("topicName")) or "General"
         created_at = clean_text(note.get("createdAt"))
         note_created_date = normalize_date(created_at)
+        note_year_month = note_created_date[:7] if note_created_date else ""
         topic_id = note.get("idTopicFk")
+
+        related_year_months = sorted(
+            {
+                value
+                for value in [meeting_year_month, note_year_month]
+                if value
+            }
+        )
 
         note_text = f"""
 Document type: Meeting note
@@ -458,6 +523,7 @@ Meeting context:
 - Organization: {org_name}
 - Meeting date: {meeting_start_date}
 - Meeting year-month: {meeting_year_month}
+- Related year-months: {", ".join(related_year_months)}
 
 Note detail:
 - Note ID: {note_id}
@@ -489,6 +555,12 @@ Content:
                     "meeting_start_date": meeting_start_date,
                     "meeting_end_date": meeting_end_date,
                     "meeting_year_month": meeting_year_month,
+                    "related_year_months": "|".join(related_year_months),
+                    "related_dates": "|".join(
+                        value
+                        for value in [meeting_start_date, meeting_end_date, note_created_date]
+                        if value
+                    ),
                     "note_id": note_id,
                     "note_type": note_type,
                     "topic_id": topic_id,
@@ -527,8 +599,40 @@ Content:
         activity_target_date = normalize_date(target_date)
         activity_completed_date = normalize_date(completed_at)
 
+        target_year_month = (
+            activity_target_date[:7] if activity_target_date else ""
+        )
+        completed_year_month = (
+            activity_completed_date[:7] if activity_completed_date else ""
+        )
+
+        related_year_months = sorted(
+            {
+                value
+                for value in [
+                    meeting_year_month,
+                    target_year_month,
+                    completed_year_month,
+                ]
+                if value
+            }
+        )
+
+        related_dates = sorted(
+            {
+                value
+                for value in [
+                    meeting_start_date,
+                    meeting_end_date,
+                    activity_target_date,
+                    activity_completed_date,
+                ]
+                if value
+            }
+        )
+
         inconsistency = ""
-        if activity_status.lower() == "open" and completed_at:
+        if normalize_label(activity_status) == "open" and completed_at:
             inconsistency = "The activity appears as Open but has completedAt."
 
         activity_text = f"""
@@ -544,6 +648,7 @@ Meeting context:
 - Organization: {org_name}
 - Meeting date: {meeting_start_date}
 - Meeting year-month: {meeting_year_month}
+- Related year-months: {", ".join(related_year_months)}
 
 Activity detail:
 - Activity ID: {activity_id}
@@ -579,6 +684,8 @@ Description:
                     "meeting_start_date": meeting_start_date,
                     "meeting_end_date": meeting_end_date,
                     "meeting_year_month": meeting_year_month,
+                    "related_year_months": "|".join(related_year_months),
+                    "related_dates": "|".join(related_dates),
                     "activity_id": activity_id,
                     "activity_status": activity_status,
                     "assigned_to": assigned_to,

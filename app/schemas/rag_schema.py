@@ -66,6 +66,27 @@ class AskRequest(BaseModel):
         ),
     )
 
+    context_history_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional id_history of a previous assistant response to use as context."
+        ),
+    )
+
+    include_recent_history: bool = Field(
+        default=True,
+        description=(
+            "If true, includes recent chat history from the same user."
+        ),
+    )
+
+    history_limit: int = Field(
+        default=6,
+        ge=0,
+        le=20,
+        description="Number of recent history items to include as conversation context.",
+    )
+
 
 class AskTextResponse(BaseModel):
     content: str
@@ -105,7 +126,7 @@ class SearchRequest(BaseModel):
 
     year_month: str | None = Field(
         default=None,
-        description="Optional. If provided, searches only in that monthly collection. Example: 2026-03.",
+        description="Optional. If provided, searches documents related to that month. Example: 2026-03.",
     )
 
 

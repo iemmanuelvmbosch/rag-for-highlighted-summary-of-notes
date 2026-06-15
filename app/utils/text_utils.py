@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 import dateparser
@@ -54,6 +55,16 @@ def clean_text(value: Any) -> str:
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
+    return text.strip()
+
+
+def normalize_label(value: Any) -> str:
+    text = clean_text(value).lower()
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(
+        char for char in text
+        if unicodedata.category(char) != "Mn"
+    )
     return text.strip()
 
 
@@ -246,6 +257,76 @@ def extract_date_from_question(question: str) -> str:
     return found_dates[0][1].date().isoformat()
 
 
+def _current_date() -> date:
+    return datetime.now().date()
+
+
+def extract_relative_temporal_filter(question: str) -> TemporalFilter:
+    text = normalize_label(question)
+
+    if not text:
+        return TemporalFilter(period="none")
+
+    today = _current_date()
+
+    if re.search(r"\bhoy\b", text):
+        value = today.isoformat()
+        year_month = value[:7]
+        return TemporalFilter(
+            period="day",
+            date=value,
+            year_month=year_month,
+            collection_key=collection_key_from_year_month(year_month),
+        )
+
+    if re.search(r"\bayer\b", text):
+        value = (today - timedelta(days=1)).isoformat()
+        year_month = value[:7]
+        return TemporalFilter(
+            period="day",
+            date=value,
+            year_month=year_month,
+            collection_key=collection_key_from_year_month(year_month),
+        )
+
+    if re.search(r"\bmanana\b", text):
+        value = (today + timedelta(days=1)).isoformat()
+        year_month = value[:7]
+        return TemporalFilter(
+            period="day",
+            date=value,
+            year_month=year_month,
+            collection_key=collection_key_from_year_month(year_month),
+        )
+
+    if "mes pasado" in text:
+        first_day_current_month = today.replace(day=1)
+        previous_month_day = first_day_current_month - timedelta(days=1)
+        year_month = f"{previous_month_day.year:04d}-{previous_month_day.month:02d}"
+
+        return TemporalFilter(
+            period="month",
+            year_month=year_month,
+            collection_key=collection_key_from_year_month(year_month),
+        )
+
+    if (
+        "este mes" in text
+        or "mes actual" in text
+        or "del mes" in text
+        and "pasado" not in text
+    ):
+        year_month = f"{today.year:04d}-{today.month:02d}"
+
+        return TemporalFilter(
+            period="month",
+            year_month=year_month,
+            collection_key=collection_key_from_year_month(year_month),
+        )
+
+    return TemporalFilter(period="none")
+
+
 def extract_temporal_filter(
     question: str,
     explicit_date: str | None = None,
@@ -272,13 +353,18 @@ def extract_temporal_filter(
                 period="month",
                 year_month=normalized_year_month,
                 collection_key=collection_key_from_year_month(
-                    normalized_year_month),
+                    normalized_year_month
+                ),
             )
 
     text = clean_text(question)
 
     if not text:
         return TemporalFilter(period="none")
+
+    relative_filter = extract_relative_temporal_filter(text)
+    if relative_filter.period != "none":
+        return relative_filter
 
     if text_has_explicit_day(text):
         normalized_date = extract_date_from_question(text)
@@ -300,7 +386,8 @@ def extract_temporal_filter(
             period="month",
             year_month=normalized_year_month,
             collection_key=collection_key_from_year_month(
-                normalized_year_month),
+                normalized_year_month
+            ),
         )
 
     return TemporalFilter(period="none")

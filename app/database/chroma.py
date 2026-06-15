@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 
 import chromadb
 
 from app.utils.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_chroma_client() -> chromadb.PersistentClient:
@@ -13,19 +16,29 @@ def get_chroma_client() -> chromadb.PersistentClient:
 
 
 def sanitize_collection_name(name: str) -> str:
-    name = name.strip().lower()
-    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
-    name = re.sub(r"^[^a-zA-Z0-9]+", "", name)
-    name = re.sub(r"[^a-zA-Z0-9]+$", "", name)
+    clean_name = str(name or "").strip().lower()
 
-    if len(name) < 3:
-        name = f"rag_{name}"
+    clean_name = re.sub(r"[^a-zA-Z0-9._-]", "_", clean_name)
+    clean_name = re.sub(r"^[^a-zA-Z0-9]+", "", clean_name)
+    clean_name = re.sub(r"[^a-zA-Z0-9]+$", "", clean_name)
 
-    if len(name) > 63:
-        name = name[:63]
-        name = re.sub(r"[^a-zA-Z0-9]+$", "", name)
+    if not clean_name:
+        clean_name = "rag_unknown"
 
-    return name
+    if len(clean_name) < 3:
+        clean_name = f"rag_{clean_name}"
+
+    if len(clean_name) > 63:
+        clean_name = clean_name[:63]
+        clean_name = re.sub(r"[^a-zA-Z0-9]+$", "", clean_name)
+
+    if not clean_name:
+        clean_name = "rag_unknown"
+
+    if len(clean_name) < 3:
+        clean_name = "rag"
+
+    return clean_name
 
 
 def get_collection_name_for_key(collection_key: str) -> str:
@@ -53,6 +66,16 @@ def get_rag_collection(collection_key: str):
     )
 
 
+def get_existing_rag_collection(collection_key: str):
+    client = get_chroma_client()
+    collection_name = get_collection_name_for_key(collection_key)
+
+    try:
+        return client.get_collection(name=collection_name)
+    except Exception:
+        return None
+
+
 def list_rag_collection_names() -> list[str]:
     settings = get_settings()
     client = get_chroma_client()
@@ -77,7 +100,19 @@ def get_all_rag_collections():
     client = get_chroma_client()
     collection_names = list_rag_collection_names()
 
-    return [client.get_collection(name=name) for name in collection_names]
+    collections = []
+
+    for name in collection_names:
+        try:
+            collections.append(client.get_collection(name=name))
+        except Exception as error:
+            logger.exception(
+                "Error getting Chroma collection %s: %s",
+                name,
+                str(error),
+            )
+
+    return collections
 
 
 def delete_all_rag_collections() -> int:
@@ -90,8 +125,12 @@ def delete_all_rag_collections() -> int:
         try:
             client.delete_collection(name)
             deleted += 1
-        except Exception:
-            pass
+        except Exception as error:
+            logger.exception(
+                "Error deleting Chroma collection %s: %s",
+                name,
+                str(error),
+            )
 
     return deleted
 
@@ -102,7 +141,11 @@ def reset_rag_collection(collection_key: str):
 
     try:
         client.delete_collection(collection_name)
-    except Exception:
-        pass
+    except Exception as error:
+        logger.warning(
+            "Could not delete Chroma collection %s before reset: %s",
+            collection_name,
+            str(error),
+        )
 
     return get_rag_collection(collection_key)

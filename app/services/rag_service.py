@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
-from typing import Literal
+from typing import Any, Literal
 
 from app.database.chroma import (
     delete_all_rag_collections,
     get_all_rag_collections,
     get_collection_name_for_key,
+    get_existing_rag_collection,
     get_rag_collection,
 )
 from app.models.rag_models import RagDocument, RagSearchResult
@@ -14,21 +16,28 @@ from app.rag.prompts import SYSTEM_PROMPT, build_user_prompt
 from app.schemas.rag_schema import SourceItem
 from app.services.document_builder_service import DocumentBuilderService
 from app.services.meettrack_client_service import MeetTrackClientService
-from app.services.openai_service import OpenAIService
+from app.services.service_factory import get_openai_service
 from app.utils.settings import get_settings
 from app.utils.text_utils import (
     build_date_range_filter,
     collection_key_from_year_month,
     extract_temporal_filter,
     meeting_matches_date_range,
+    normalize_date,
     normalize_year_month,
 )
+from app.utils.question_guard import (
+    build_out_of_scope_answer,
+    classify_question,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class RagService:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self.openai_service = OpenAIService()
+        self.openai_service = get_openai_service()
 
     def ingest_from_meettrack(
         self,
@@ -56,10 +65,11 @@ class RagService:
             delete_all_rag_collections()
 
         if reset and filter_info["filter_applied"] and documents:
-            self._delete_existing_documents(documents)
+            self._delete_documents_for_meetings(documents)
 
         collections_used = self._upsert_documents_grouped_by_collection(
-            documents)
+            documents
+        )
 
         return {
             "total_records_from_api": api_response.get("totalRecords", 0),
@@ -110,69 +120,21 @@ class RagService:
                 "date_scope": date_scope,
             }
 
-        grouped_documents = self._group_documents_by_collection_key(documents)
+        self._delete_documents_for_meetings(documents)
 
-        new_documents_count = 0
-        updated_documents_count = 0
-        unchanged_documents_count = 0
-        collections_used: list[str] = []
-
-        for collection_key, docs in grouped_documents.items():
-            collection = get_rag_collection(collection_key)
-            collection_name = get_collection_name_for_key(collection_key)
-            collections_used.append(collection_name)
-
-            ids = [doc.id for doc in docs]
-
-            existing = collection.get(
-                ids=ids,
-                include=["metadatas"],
-            )
-
-            existing_ids = existing.get("ids", [])
-            existing_metadatas = existing.get("metadatas", [])
-
-            existing_map = {
-                doc_id: metadata or {}
-                for doc_id, metadata in zip(existing_ids, existing_metadatas)
-            }
-
-            new_documents: list[RagDocument] = []
-            updated_documents: list[RagDocument] = []
-
-            for doc in docs:
-                current_hash = doc.metadata.get("content_hash", "")
-                previous_metadata = existing_map.get(doc.id)
-
-                if previous_metadata is None:
-                    new_documents.append(doc)
-                    continue
-
-                previous_hash = previous_metadata.get("content_hash", "")
-
-                if previous_hash != current_hash:
-                    updated_documents.append(doc)
-                else:
-                    unchanged_documents_count += 1
-
-            docs_to_upsert = new_documents + updated_documents
-
-            if docs_to_upsert:
-                self._upsert_documents(
-                    collection=collection, documents=docs_to_upsert)
-
-            new_documents_count += len(new_documents)
-            updated_documents_count += len(updated_documents)
+        collections_used = self._upsert_documents_grouped_by_collection(
+            documents
+        )
 
         return {
             "total_records_from_api": api_response.get("totalRecords", 0),
             "total_meetings_filtered": len(filtered_response.get("data", [])),
             "total_documents_found": len(documents),
-            "new_documents": new_documents_count,
-            "updated_documents": updated_documents_count,
-            "unchanged_documents": unchanged_documents_count,
+            "new_documents": len(documents),
+            "updated_documents": 0,
+            "unchanged_documents": 0,
             "total_collections_used": len(collections_used),
-            "collections_used": sorted(collections_used),
+            "collections_used": collections_used,
             "filter_applied": filter_info["filter_applied"],
             "filter_start_date": filter_info["filter_start_date"],
             "filter_end_date": filter_info["filter_end_date"],
@@ -192,7 +154,8 @@ class RagService:
 
         if not isinstance(meetings, list):
             raise ValueError(
-                "La propiedad 'data' debe ser una lista de reuniones.")
+                "La propiedad 'data' debe ser una lista de reuniones."
+            )
 
         date_filter = build_date_range_filter(
             date=date,
@@ -237,8 +200,9 @@ class RagService:
         grouped: dict[str, list[RagDocument]] = defaultdict(list)
 
         for doc in documents:
-            collection_key = str(doc.metadata.get(
-                "collection_key") or "unknown")
+            collection_key = str(
+                doc.metadata.get("collection_key") or "unknown"
+            )
             grouped[collection_key].append(doc)
 
         return grouped
@@ -265,7 +229,8 @@ class RagService:
 
     def _upsert_documents(self, collection, documents: list[RagDocument]) -> None:
         valid_documents = [
-            doc for doc in documents if doc.text and doc.text.strip()]
+            doc for doc in documents if doc.text and doc.text.strip()
+        ]
 
         if not valid_documents:
             return
@@ -288,17 +253,43 @@ class RagService:
             embeddings=embeddings,
         )
 
-    def _delete_existing_documents(self, documents: list[RagDocument]) -> None:
-        grouped_documents = self._group_documents_by_collection_key(documents)
+    def _delete_documents_for_meetings(
+        self,
+        documents: list[RagDocument],
+    ) -> int:
+        meeting_ids = {
+            doc.metadata.get("meeting_id")
+            for doc in documents
+            if doc.metadata.get("meeting_id") not in ("", None)
+        }
 
-        for collection_key, docs in grouped_documents.items():
-            collection = get_rag_collection(collection_key)
-            ids = [doc.id for doc in docs]
+        if not meeting_ids:
+            return 0
 
-            try:
-                collection.delete(ids=ids)
-            except Exception:
-                pass
+        deleted = 0
+        collections = get_all_rag_collections()
+
+        for collection in collections:
+            for meeting_id in meeting_ids:
+                try:
+                    result = collection.get(
+                        where={"meeting_id": meeting_id},
+                    )
+                    ids = result.get("ids", [])
+
+                    if ids:
+                        collection.delete(ids=ids)
+                        deleted += len(ids)
+
+                except Exception as error:
+                    logger.exception(
+                        "Error deleting documents for meeting_id=%s in collection=%s: %s",
+                        meeting_id,
+                        getattr(collection, "name", ""),
+                        str(error),
+                    )
+
+        return deleted
 
     def ask(
         self,
@@ -307,47 +298,87 @@ class RagService:
         date_filter: str | None = None,
         year_month_filter: str | None = None,
         mode: str = "auto",
+        conversation_context: str | None = None,
     ) -> dict:
+        guard = classify_question(
+            question=question,
+            has_conversation_context=bool(conversation_context),
+            has_explicit_date_filter=bool(date_filter),
+            has_explicit_year_month_filter=bool(year_month_filter),
+            mode=mode,
+        )
+
+        if guard.intent == "out_of_scope":
+            return {
+                "answer": build_out_of_scope_answer(),
+                "temporal_period": None,
+                "temporal_date": None,
+                "temporal_year_month": None,
+                "sources": [],
+            }
+
+        effective_conversation_context = (
+            conversation_context
+            if guard.use_conversation_context
+            else None
+        )
+
         temporal_filter = extract_temporal_filter(
             question=question,
             explicit_date=date_filter,
             explicit_year_month=year_month_filter,
         )
 
-        if mode == "semantic":
-            search_results = self.search(
-                query=question,
-                top_k=top_k,
-                year_month=temporal_filter.year_month,
-            )
-        elif mode == "day":
-            search_results = self.search_full_meeting_context_by_day(
-                date_value=date_filter or temporal_filter.date,
-                limit=top_k,
-            )
-        elif mode == "month":
-            search_results = self.search_full_meeting_context_by_month(
-                year_month=year_month_filter or temporal_filter.year_month,
-                limit=top_k,
-            )
-        else:
-            if temporal_filter.period == "day":
-                search_results = self.search_full_meeting_context_by_day(
-                    date_value=temporal_filter.date,
-                    limit=top_k,
-                )
-            elif temporal_filter.period == "month":
-                search_results = self.search_full_meeting_context_by_month(
-                    year_month=temporal_filter.year_month,
-                    limit=top_k,
-                )
-            else:
+        temporal_day_limit = max(top_k, 50)
+        temporal_month_limit = max(top_k, 100)
+
+        semantic_query = self._build_semantic_query(
+            question=question,
+            conversation_context=effective_conversation_context,
+        )
+
+        search_results: list[RagSearchResult] = []
+
+        if guard.use_chroma:
+            if mode == "semantic":
                 search_results = self.search(
-                    query=question,
+                    query=semantic_query,
                     top_k=top_k,
+                    year_month=temporal_filter.year_month,
                 )
 
-        if not search_results:
+            elif mode == "day":
+                search_results = self.search_full_meeting_context_by_day(
+                    date_value=date_filter or temporal_filter.date,
+                    limit=temporal_day_limit,
+                )
+
+            elif mode == "month":
+                search_results = self.search_full_meeting_context_by_month(
+                    year_month=year_month_filter or temporal_filter.year_month,
+                    limit=temporal_month_limit,
+                )
+
+            else:
+                if temporal_filter.period == "day":
+                    search_results = self.search_full_meeting_context_by_day(
+                        date_value=temporal_filter.date,
+                        limit=temporal_day_limit,
+                    )
+
+                elif temporal_filter.period == "month":
+                    search_results = self.search_full_meeting_context_by_month(
+                        year_month=temporal_filter.year_month,
+                        limit=temporal_month_limit,
+                    )
+
+                else:
+                    search_results = self.search(
+                        query=semantic_query,
+                        top_k=top_k,
+                    )
+
+        if not search_results and not effective_conversation_context:
             return {
                 "answer": "No encontré información suficiente en Chroma para responder. Primero ejecuta /api/rag/ingest o /api/rag/sync.",
                 "temporal_period": temporal_filter.period,
@@ -356,7 +387,7 @@ class RagService:
                 "sources": [],
             }
 
-        context = self._build_context(search_results)
+        context = self._build_context(search_results) if search_results else ""
 
         messages = [
             {
@@ -368,6 +399,7 @@ class RagService:
                 "content": build_user_prompt(
                     question=question,
                     context=context,
+                    conversation_context=effective_conversation_context,
                 ),
             },
         ]
@@ -379,8 +411,27 @@ class RagService:
             "temporal_period": temporal_filter.period,
             "temporal_date": temporal_filter.date,
             "temporal_year_month": temporal_filter.year_month,
-            "sources": [self._to_source_item(result) for result in search_results],
+            "sources": [
+                self._to_source_item(result)
+                for result in search_results
+            ],
         }
+
+    def _build_semantic_query(
+        self,
+        question: str,
+        conversation_context: str | None = None,
+    ) -> str:
+        if not conversation_context or not conversation_context.strip():
+            return question
+
+        return f"""
+Contexto conversacional:
+{conversation_context}
+
+Pregunta actual:
+{question}
+""".strip()
 
     def search(
         self,
@@ -390,18 +441,11 @@ class RagService:
     ) -> list[RagSearchResult]:
         query_embedding = self.openai_service.embed_query(query)
 
-        collections = []
+        normalized_year_month = (
+            normalize_year_month(year_month) if year_month else ""
+        )
 
-        if year_month:
-            normalized_year_month = normalize_year_month(year_month)
-
-            if normalized_year_month:
-                collection_key = collection_key_from_year_month(
-                    normalized_year_month)
-                collections = [get_rag_collection(collection_key)]
-
-        if not collections:
-            collections = get_all_rag_collections()
+        collections = get_all_rag_collections()
 
         results: list[RagSearchResult] = []
 
@@ -421,25 +465,36 @@ class RagService:
             distances = query_result.get("distances", [[]])[0]
 
             for index, doc_id in enumerate(ids):
+                metadata = metadatas[index] or {}
+
+                if normalized_year_month and not self._metadata_matches_year_month(
+                    metadata=metadata,
+                    year_month=normalized_year_month,
+                ):
+                    continue
+
                 results.append(
                     RagSearchResult(
                         id=doc_id,
                         text=documents[index],
-                        metadata=metadatas[index] or {},
+                        metadata=metadata,
                         distance=distances[index] if distances else None,
                         collection_name=collection.name,
                     )
                 )
 
         results.sort(
-            key=lambda item: item.distance if item.distance is not None else 999999)
+            key=lambda item: item.distance
+            if item.distance is not None
+            else 999999
+        )
 
         return results[:top_k]
 
     def search_full_meeting_context_by_day(
         self,
         date_value: str,
-        limit: int = 10,
+        limit: int = 50,
     ) -> list[RagSearchResult]:
         temporal_filter = extract_temporal_filter(
             question="",
@@ -449,31 +504,39 @@ class RagService:
         if temporal_filter.period != "day":
             return []
 
-        collection = get_rag_collection(temporal_filter.collection_key)
+        collections = get_all_rag_collections()
+        results: list[RagSearchResult] = []
 
-        if collection.count() == 0:
-            return []
+        for collection in collections:
+            if collection.count() == 0:
+                continue
 
-        result = collection.get(
-            where={
-                "$and": [
-                    {"document_type": "meeting_full_context"},
-                    {"meeting_start_date": temporal_filter.date},
-                ]
-            },
-            include=["documents", "metadatas"],
-            limit=limit,
-        )
+            get_limit = max(limit, min(collection.count(), 5000))
 
-        return self._collection_get_to_search_results(
-            collection=collection,
-            result=result,
-        )
+            result = collection.get(
+                where={"document_type": "meeting_full_context"},
+                include=["documents", "metadatas"],
+                limit=get_limit,
+            )
+
+            collection_results = self._collection_get_to_search_results(
+                collection=collection,
+                result=result,
+            )
+
+            for item in collection_results:
+                if self._metadata_matches_date(
+                    metadata=item.metadata,
+                    date_value=temporal_filter.date,
+                ):
+                    results.append(item)
+
+        return self._sort_temporal_results(results)[:limit]
 
     def search_full_meeting_context_by_month(
         self,
         year_month: str,
-        limit: int = 50,
+        limit: int = 100,
     ) -> list[RagSearchResult]:
         normalized_year_month = normalize_year_month(year_month)
 
@@ -481,26 +544,45 @@ class RagService:
             return []
 
         collection_key = collection_key_from_year_month(normalized_year_month)
-        collection = get_rag_collection(collection_key)
+        preferred_collection = get_existing_rag_collection(collection_key)
 
-        if collection.count() == 0:
-            return []
+        collections = get_all_rag_collections()
 
-        result = collection.get(
-            where={
-                "$and": [
-                    {"document_type": "meeting_full_context"},
-                    {"meeting_year_month": normalized_year_month},
-                ]
-            },
-            include=["documents", "metadatas"],
-            limit=limit,
-        )
+        if preferred_collection is not None:
+            collections = sorted(
+                collections,
+                key=lambda collection: 0
+                if collection.name == preferred_collection.name
+                else 1,
+            )
 
-        return self._collection_get_to_search_results(
-            collection=collection,
-            result=result,
-        )
+        results: list[RagSearchResult] = []
+
+        for collection in collections:
+            if collection.count() == 0:
+                continue
+
+            get_limit = max(limit, min(collection.count(), 5000))
+
+            result = collection.get(
+                where={"document_type": "meeting_full_context"},
+                include=["documents", "metadatas"],
+                limit=get_limit,
+            )
+
+            collection_results = self._collection_get_to_search_results(
+                collection=collection,
+                result=result,
+            )
+
+            for item in collection_results:
+                if self._metadata_matches_year_month(
+                    metadata=item.metadata,
+                    year_month=normalized_year_month,
+                ):
+                    results.append(item)
+
+        return self._sort_temporal_results(results)[:limit]
 
     def _collection_get_to_search_results(
         self,
@@ -527,13 +609,7 @@ class RagService:
                 )
             )
 
-        return sorted(
-            search_results,
-            key=lambda item: (
-                item.metadata.get("meeting_start_date", ""),
-                self._safe_sort_value(item.metadata.get("meeting_id")),
-            ),
-        )
+        return search_results
 
     def _build_context(self, results: list[RagSearchResult]) -> str:
         blocks: list[str] = []
@@ -550,6 +626,8 @@ Título reunión: {metadata.get("meeting_title", "")}
 Estado reunión: {metadata.get("meeting_status", "")}
 Fecha reunión: {metadata.get("meeting_start_date", "")}
 Mes-año reunión: {metadata.get("meeting_year_month", "")}
+Fechas relacionadas: {metadata.get("related_dates", "")}
+Meses relacionados: {metadata.get("related_year_months", "")}
 Tópico: {metadata.get("topic_name", "")}
 
 Contenido:
@@ -578,6 +656,96 @@ Contenido:
             activity_status=metadata.get("activity_status"),
             distance=result.distance,
             text_preview=result.text[:500],
+        )
+
+    @staticmethod
+    def _split_metadata_values(value: Any) -> set[str]:
+        if value in ("", None):
+            return set()
+
+        if isinstance(value, list):
+            return {str(item).strip() for item in value if str(item).strip()}
+
+        text = str(value)
+        parts = []
+
+        for separator in ["|", ",", ";"]:
+            if separator in text:
+                parts = text.split(separator)
+                break
+
+        if not parts:
+            parts = [text]
+
+        return {part.strip() for part in parts if part.strip()}
+
+    def _metadata_matches_year_month(
+        self,
+        metadata: dict,
+        year_month: str,
+    ) -> bool:
+        if not year_month:
+            return True
+
+        related_year_months = self._split_metadata_values(
+            metadata.get("related_year_months")
+        )
+
+        if year_month in related_year_months:
+            return True
+
+        direct_values = [
+            metadata.get("meeting_year_month"),
+            str(metadata.get("meeting_start_date", ""))[:7],
+            str(metadata.get("meeting_end_date", ""))[:7],
+            str(metadata.get("note_created_date", ""))[:7],
+            str(metadata.get("activity_target_date", ""))[:7],
+            str(metadata.get("activity_completed_date", ""))[:7],
+        ]
+
+        return year_month in direct_values
+
+    def _metadata_matches_date(
+        self,
+        metadata: dict,
+        date_value: str,
+    ) -> bool:
+        normalized_date = normalize_date(date_value)
+
+        if not normalized_date:
+            return True
+
+        related_dates = self._split_metadata_values(
+            metadata.get("related_dates")
+        )
+
+        if normalized_date in related_dates:
+            return True
+
+        direct_values = [
+            metadata.get("meeting_start_date"),
+            metadata.get("meeting_end_date"),
+            metadata.get("note_created_date"),
+            metadata.get("activity_target_date"),
+            metadata.get("activity_completed_date"),
+        ]
+
+        return normalized_date in {
+            normalize_date(value)
+            for value in direct_values
+            if normalize_date(value)
+        }
+
+    def _sort_temporal_results(
+        self,
+        results: list[RagSearchResult],
+    ) -> list[RagSearchResult]:
+        return sorted(
+            results,
+            key=lambda item: (
+                item.metadata.get("meeting_start_date", ""),
+                self._safe_sort_value(item.metadata.get("meeting_id")),
+            ),
         )
 
     @staticmethod
