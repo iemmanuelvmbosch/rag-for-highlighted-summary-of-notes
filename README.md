@@ -243,7 +243,7 @@ Este endpoint devuelve únicamente la respuesta en formato texto/Markdown, sin e
 {
   "username_fk": "emmanuel",
   "question": "¿Qué pasó en febrero 2026?",
-  "top_k": 10,
+  "top_k": 1,
   "mode": "auto"
 }
 ```

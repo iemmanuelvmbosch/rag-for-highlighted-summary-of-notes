@@ -7,3 +7,7 @@ pydantic-settings
 openai
 chromadb
 tiktoken
+sentence-transformers
+pyodbc
+pandas
+numpy
