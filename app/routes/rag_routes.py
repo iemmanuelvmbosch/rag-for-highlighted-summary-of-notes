@@ -10,6 +10,7 @@ from app.schemas.rag_schema import (
     AskRequest,
     AskResponse,
     AskTextResponse,
+    ChatHistoryPaginatedResponse,
     IngestResponse,
     SearchRequest,
     SearchResponse,
@@ -352,6 +353,45 @@ def ask_question_text(payload: AskRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Error querying the RAG: {str(error)}",
+        )
+
+
+@router.get("/chat-history", response_model=ChatHistoryPaginatedResponse)
+def get_chat_history_by_user(
+    username_fk: str = Query(
+        ...,
+        min_length=1,
+        description="User who owns the history.",
+    ),
+    page: int = Query(
+        default=1,
+        ge=1,
+        description="Page number. Starts at 1.",
+    ),
+    page_size: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description="Number of records per page. Maximum 100.",
+    ),
+):
+    try:
+        return ChatHistoryService.get_paginated_history_by_user(
+            username_fk=username_fk,
+            page=page,
+            page_size=page_size,
+        )
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting chat history: {str(error)}",
         )
 
 

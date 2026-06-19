@@ -177,3 +177,94 @@ class ChatHistoryService:
 
         finally:
             connection.close()
+
+    @staticmethod
+    def get_paginated_history_by_user(
+        username_fk: str,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        clean_username = username_fk.strip()
+
+        if not clean_username:
+            raise ValueError("username_fk is required.")
+
+        safe_page = max(1, int(page))
+        safe_page_size = max(1, min(int(page_size), 100))
+        offset = (safe_page - 1) * safe_page_size
+
+        count_query = """
+        SELECT COUNT(1)
+        FROM [sch_meettrack].[meetingsChatBotHistory]
+        WHERE [username_fk] = ?;
+        """
+
+        items_query = """
+        SELECT
+            [id_history],
+            [username_fk],
+            [question],
+            [response_content],
+            [response_format],
+            [response_status],
+            [created_at],
+            [updated_at]
+        FROM [sch_meettrack].[meetingsChatBotHistory]
+        WHERE [username_fk] = ?
+        ORDER BY [created_at] DESC, [id_history] DESC
+        OFFSET ? ROWS
+        FETCH NEXT ? ROWS ONLY;
+        """
+
+        connection = get_sql_server_connection()
+
+        try:
+            cursor = connection.cursor()
+
+            cursor.execute(count_query, (clean_username,))
+            total_row = cursor.fetchone()
+            total = int(total_row[0]) if total_row else 0
+
+            cursor.execute(
+                items_query,
+                (
+                    clean_username,
+                    offset,
+                    safe_page_size,
+                ),
+            )
+
+            rows = cursor.fetchall()
+
+            items = [
+                {
+                    "id_history": int(row[0]),
+                    "username_fk": row[1] or "",
+                    "question": row[2] or "",
+                    "response_content": row[3] or "",
+                    "response_format": row[4] or "",
+                    "response_status": row[5] or "",
+                    "created_at": str(row[6]) if row[6] else "",
+                    "updated_at": str(row[7]) if row[7] else "",
+                }
+                for row in rows
+            ]
+
+            total_pages = (
+                (total + safe_page_size - 1) // safe_page_size
+                if total > 0
+                else 0
+            )
+
+            return {
+                "items": items,
+                "total": total,
+                "page": safe_page,
+                "page_size": safe_page_size,
+                "total_pages": total_pages,
+                "has_next": safe_page < total_pages,
+                "has_previous": safe_page > 1,
+            }
+
+        finally:
+            connection.close()

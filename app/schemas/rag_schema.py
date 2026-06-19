@@ -138,3 +138,24 @@ class DebugConnectionResponse(BaseModel):
     meettrack: dict
     openai: dict
     sql_server: dict
+
+
+class ChatHistoryItem(BaseModel):
+    id_history: int
+    username_fk: str
+    question: str
+    response_content: str
+    response_format: str
+    response_status: str
+    created_at: str
+    updated_at: str
+
+
+class ChatHistoryPaginatedResponse(BaseModel):
+    items: list[ChatHistoryItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool
