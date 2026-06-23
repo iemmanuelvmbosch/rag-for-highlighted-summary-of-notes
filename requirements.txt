@@ -12,3 +12,4 @@ sentence-transformers
 pyodbc
 pandas
 numpy
+pysqlite3-binary
